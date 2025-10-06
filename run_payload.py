@@ -35,8 +35,8 @@ def main(args):
             if not line:
                 continue
 
-            # Bỏ số thứ tự kiểu "123. " ở đầu dòng nếu có
-            text = re.sub(r'^\s*\d+\.\s*', '', line)
+            # Bỏ số thứ tự kiểu "123 " ở đầu dòng nếu có
+            text = re.sub(r'^\s*\d+\s+', '', line)
 
             if not text:
                 continue
