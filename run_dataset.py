@@ -70,6 +70,11 @@ def main(args):
             f.write(f"Detected Injection: {detect}\n")
             f.write("Check: ")
             f.write("\n")
+        
+        import gc, torch
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         labels.append(data['label'])
         predictions.append(detect)

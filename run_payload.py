@@ -67,6 +67,11 @@ def main(args):
                 f.write(f"Detected Injection: {result[0]}\n")
                 f.write("Check: ")
                 f.write("\n")
+                
+            import gc, torch
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run detector on each line of a text file")
