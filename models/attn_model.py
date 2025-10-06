@@ -84,41 +84,54 @@ class AttentionModel(Model):
         else:
             n_tokens = self.max_output_tokens
 
-        with torch.no_grad():
-            for i in range(n_tokens):
-                output = self.model(
+        with torch.inference_mode():
+            # step 1: run one step WITH attentions
+            output = self.model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                output_attentions=True
+            )
+            logits = output.logits[:, -1, :]
+            probs = F.softmax(logits, dim=-1)
+            next_token_id = sample_token(
+                logits[0], top_k=self.top_k, top_p=self.top_p, temperature=1.0)[0]
+            generated_probs.append(probs[0, next_token_id.item()].item())
+            generated_tokens.append(next_token_id.item())
+
+            # keep only first-step attention (what detector uses)
+            attention_map = [att.detach().cpu().half() for att in output['attentions']]
+            attention_map = [torch.nan_to_num(att, nan=0.0) for att in attention_map]
+            attention_map = get_last_attn(attention_map)
+            attention_maps = [attention_map]
+            del output  # free references
+
+            if next_token_id.item() == self.tokenizer.eos_token_id:
+                generated_text = self.tokenizer.decode(generated_tokens, skip_special_tokens=True)
+                output_tokens = [self.tokenizer.decode(t, skip_special_tokens=True) for t in generated_tokens]
+                return generated_text, output_tokens, attention_maps, input_tokens, data_range, generated_probs
+
+            # prepare next input
+            input_ids = torch.cat((input_ids, next_token_id.unsqueeze(0).unsqueeze(0)), dim=-1)
+            attention_mask = torch.cat((attention_mask, torch.tensor([[1]], device=input_ids.device)), dim=-1)
+
+            # step 2+: run remaining tokens WITHOUT attentions
+            remaining = (max_output_tokens if max_output_tokens is not None else self.max_output_tokens) - 1
+            for _ in range(remaining):
+                out2 = self.model(
                     input_ids=input_ids,
                     attention_mask=attention_mask,
-                    output_attentions=True
+                    output_attentions=False
                 )
-
-                logits = output.logits[:, -1, :]
+                logits = out2.logits[:, -1, :]
                 probs = F.softmax(logits, dim=-1)
-                # next_token_id = logits.argmax(dim=-1).squeeze()
-                next_token_id = sample_token(
-                    logits[0], top_k=self.top_k, top_p=self.top_p, temperature=1.0)[0]
-
+                next_token_id = sample_token(logits[0], top_k=self.top_k, top_p=self.top_p, temperature=1.0)[0]
                 generated_probs.append(probs[0, next_token_id.item()].item())
                 generated_tokens.append(next_token_id.item())
-
                 if next_token_id.item() == self.tokenizer.eos_token_id:
                     break
+                input_ids = torch.cat((input_ids, next_token_id.unsqueeze(0).unsqueeze(0)), dim=-1)
+                attention_mask = torch.cat((attention_mask, torch.tensor([[1]], device=input_ids.device)), dim=-1)
 
-                input_ids = torch.cat(
-                    (input_ids, next_token_id.unsqueeze(0).unsqueeze(0)), dim=-1)
-                attention_mask = torch.cat(
-                    (attention_mask, torch.tensor([[1]], device=input_ids.device)), dim=-1)
-
-                attention_map = [attention.detach().cpu().half()
-                                 for attention in output['attentions']]
-                attention_map = [torch.nan_to_num(
-                    attention, nan=0.0) for attention in attention_map]
-                attention_map = get_last_attn(attention_map)
-                attention_maps.append(attention_map)
-
-        output_tokens = [self.tokenizer.decode(
-            token, skip_special_tokens=True) for token in generated_tokens]
-        generated_text = self.tokenizer.decode(
-            generated_tokens, skip_special_tokens=True)
-
+        output_tokens = [self.tokenizer.decode(t, skip_special_tokens=True) for t in generated_tokens]
+        generated_text = self.tokenizer.decode(generated_tokens, skip_special_tokens=True)
         return generated_text, output_tokens, attention_maps, input_tokens, data_range, generated_probs
