@@ -2,7 +2,7 @@
     "model_info": {
         "provider": "attn-hf",
         "name": "granite3-8b-attn",
-        "model_id": "ibm-granite/granite-3.1-8b-instruct"
+        "model_id": "ibm-granite/granite-3.3-8b-instruct"
     },
     "params": {
         "temperature": 0.1,
