@@ -29,7 +29,7 @@ def main(args):
     result = detector.detect(args.test_query)
     print("===================")
     print(f"Input: {args.test_query}")
-    print(f"Output: {result[1]["generated_text"]}")
+    print(f"Output: {result[1]['generated_text']}")
     print(f"Detected Injection: {result[0]}")
     print(f"Score: {result[1]['focus_score']}")
     print(f"Generation time: {result[1]['generation_time']:.4f} seconds")
