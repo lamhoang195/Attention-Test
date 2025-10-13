@@ -2,7 +2,7 @@ import torch
 from .model import Model
 import torch.nn.functional as F
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from .utils import sample_token
+from .utils import sample_token, get_last_attn
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
