@@ -69,6 +69,8 @@ class AttentionModel(Model):
             data_range = ((3, 3+instruction_len), (-1-data_len, -1))
         elif "granite3-8b" in self.name:
             data_range = ((3, 3+instruction_len), (-5-data_len, -5))
+        elif "gpt-oss-20b" in self.name:
+            data_range = ((3, 3+instruction_len), (-5-data_len, -5))
         else:
             raise NotImplementedError
 
