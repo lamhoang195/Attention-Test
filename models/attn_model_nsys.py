@@ -2,7 +2,7 @@ import torch
 from .model import Model
 import torch.nn.functional as F
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from .utils import sample_token, get_last_attn
+from .utils import sample_token
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -60,65 +60,31 @@ class AttentionModelNoSys(Model):
             raise NotImplementedError
 
         generated_tokens = []
-        generated_probs = []
+        generated_probs = []  # Store probabilities of generated tokens
         input_ids = model_inputs.input_ids
         attention_mask = model_inputs.attention_mask
+
+        # Ensure attention maps are stored minimally to save memory
+        attention_maps = []
 
         if max_output_tokens != None:
             n_tokens = max_output_tokens
         else:
             n_tokens = self.max_output_tokens
 
-        with torch.no_grad():
-            # Step 1: Chạy bước đầu tiên với attentions
-            output = self.model(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                output_attentions=True
-            )
-
-            # Extract logits và generate token đầu tiên
-            logits = output.logits[:, -1, :]
-            probs = F.softmax(logits, dim=-1)
-            next_token_id = sample_token(
-                logits[0], top_k=self.top_k, top_p=None, temperature=1.0)[0]
-
-            generated_probs.append(probs[0, next_token_id.item()].item())
-            generated_tokens.append(next_token_id.item())
-
-            # Lưu attention của token đầu tiên
-            attention_map = [attention.detach().cpu().half()
-                             for attention in output['attentions']]
-            attention_map = [torch.nan_to_num(
-                attention, nan=0.0) for attention in attention_map]
-            attention_map = get_last_attn(attention_map)  # Chỉ lấy attention của token cuối
-            attention_maps = [attention_map]
-            del output  # Giải phóng memory
-
-            if next_token_id.item() == self.tokenizer.eos_token_id:
-                output_tokens = [self.tokenizer.decode(
-                    token, skip_special_tokens=True) for token in generated_tokens]
-                generated_text = self.tokenizer.decode(
-                    generated_tokens, skip_special_tokens=True)
-                return generated_text, output_tokens, attention_maps, input_tokens, data_range, generated_probs
-
-            # Update input cho step tiếp theo
-            input_ids = torch.cat(
-                (input_ids, next_token_id.unsqueeze(0).unsqueeze(0)), dim=-1)
-            attention_mask = torch.cat(
-                (attention_mask, torch.tensor([[1]], device=input_ids.device)), dim=-1)
-
-            # Step 2+: Chạy các token còn lại KHÔNG có attentions
-            remaining = n_tokens - 1
-            for _ in range(remaining):
+        with torch.no_grad():  # Use no_grad to reduce memory usage
+            for i in range(n_tokens):
+                # Forward pass, optionally in half precision (mixed precision)
                 output = self.model(
                     input_ids=input_ids,
                     attention_mask=attention_mask,
-                    output_attentions=False  # Tắt attentions để tiết kiệm memory
+                    output_attentions=True
                 )
 
+                # Extract logits and compute probabilities
                 logits = output.logits[:, -1, :]
                 probs = F.softmax(logits, dim=-1)
+                # next_token_id = logits.argmax(dim=-1).squeeze()
                 next_token_id = sample_token(
                     logits[0], top_k=self.top_k, top_p=None, temperature=1.0)[0]
 
@@ -128,10 +94,18 @@ class AttentionModelNoSys(Model):
                 if next_token_id.item() == self.tokenizer.eos_token_id:
                     break
 
+                # Update input_ids and attention_mask for the next iteration
                 input_ids = torch.cat(
                     (input_ids, next_token_id.unsqueeze(0).unsqueeze(0)), dim=-1)
                 attention_mask = torch.cat(
                     (attention_mask, torch.tensor([[1]], device=input_ids.device)), dim=-1)
+
+                # Detach attention maps early to reduce memory
+                attention_map = [attention.detach().cpu().half()
+                                 for attention in output['attentions']]
+                attention_map = [torch.nan_to_num(
+                    attention, nan=0.0) for attention in attention_map]
+                attention_maps.append(attention_map)
 
         output_tokens = [self.tokenizer.decode(
             token, skip_special_tokens=True) for token in generated_tokens]
